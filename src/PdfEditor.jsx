@@ -15,6 +15,14 @@ import MagazinePreview from './components/MagazinePreview';
 import A4PageEditor from './components/A4PageEditor';
 import CoverUploadModal from './components/CoverUploadModal';
 import { prepareA4Image } from './utils/prepareA4Image';
+import { addQrToBackCover } from './utils/addQrToBackCover';
+
+const loadPageImage = (src) => new Promise((resolve, reject) => {
+  const image = new window.Image();
+  image.onload = () => resolve(image);
+  image.onerror = () => reject(new Error('Не вдалося завантажити сторінку зображення.'));
+  image.src = src;
+});
 
 export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded }) {
   const [pages, setPages] = useState([]);
@@ -61,17 +69,22 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
   }, [initialImages, onInitialImagesLoaded]);
 
   const handleApplyA4 = async (pageId, src) => {
-    const imgObj = new window.Image();
-    await new Promise((resolve, reject) => {
-      imgObj.onload = resolve;
-      imgObj.onerror = () => reject(new Error('Не вдалося оновити сторінку A4.'));
-      imgObj.src = src;
-    });
-    setPages((current) =>
-      current.map((page) => page.id === pageId
-        ? { ...page, src, sourceSrc: page.sourceSrc || page.src, imgObj, a4Prepared: true }
-        : page)
-    );
+    const page = pages.find((item) => item.id === pageId);
+    if (!page) return;
+
+    try {
+      const prepared = page.isBackCover
+        ? await addQrToBackCover(src)
+        : { src, imgObj: await loadPageImage(src) };
+      setPages((current) =>
+        current.map((item) => item.id === pageId
+          ? { ...item, ...prepared, sourceSrc: page.sourceSrc || page.src, a4Prepared: true }
+          : item)
+      );
+    } catch (error) {
+      console.error('Не вдалося оновити сторінку A4:', error);
+      alert(error?.message || 'Не вдалося оновити сторінку A4.');
+    }
   };
 
   // Завантаження файлів (в кінець)
@@ -145,10 +158,15 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
 
   const handleAddCovers = async (frontFile, backFile) => {
     try {
-      const [frontCover, backCover] = await Promise.all([
+      const [frontCover, preparedBackCover] = await Promise.all([
         preparePageFromFile(frontFile),
         preparePageFromFile(backFile)
       ]);
+      const backCover = {
+        ...preparedBackCover,
+        ...await addQrToBackCover(preparedBackCover.src),
+        isBackCover: true
+      };
       setPages((current) => [frontCover, ...current, backCover]);
       setSelectedPageId(frontCover.id);
       setIsCoverModalOpen(false);
@@ -186,12 +204,20 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
   const handleReplacePage = async (index, file) => {
     const sourceUrl = URL.createObjectURL(file);
     try {
-      const replacement = {
+      const preparedPage = {
         id: crypto.randomUUID(),
         type: 'image',
         name: file.name,
         ...await prepareA4Image(sourceUrl)
       };
+      const currentPage = pages[index];
+      const replacement = currentPage?.isBackCover
+        ? {
+            ...preparedPage,
+            ...await addQrToBackCover(preparedPage.src),
+            isBackCover: true
+          }
+        : preparedPage;
       setPages((current) => current.map((page, pageIndex) =>
         pageIndex === index ? replacement : page
       ));

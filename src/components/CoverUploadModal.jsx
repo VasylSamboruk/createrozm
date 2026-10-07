@@ -126,7 +126,7 @@ export default function CoverUploadModal({ onClose, onAddCovers }) {
             />
             <CoverSlot
               label="Задня обкладинка"
-              hint="Буде останньою сторінкою"
+              hint="QR-код сайту додасться автоматично внизу зліва"
               file={covers.back?.file}
               preview={covers.back?.preview}
               inputRef={backInputRef}
@@ -134,7 +134,7 @@ export default function CoverUploadModal({ onClose, onAddCovers }) {
             />
           </div>
           <p className="rounded-xl bg-violet-50 px-4 py-3 text-sm text-violet-900">
-            Наявні сторінки залишаться на місці між обкладинками. Після додавання їх можна буде переставляти перетягуванням.
+            Наявні сторінки залишаться між обкладинками. На задню обкладинку QR-код сайту буде додано автоматично; сторінки можна буде переставляти перетягуванням.
           </p>
         </div>
 
