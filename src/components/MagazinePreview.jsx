@@ -60,8 +60,17 @@ export default function MagazinePreview({ pages, selectedPageId, onSelectPage })
         className="shadow-2xl"
         onInit={goToSelectedPage}
         onFlip={(event) => {
-          const selectedPage = pages[event.data];
-          if (selectedPage) onSelectPage(selectedPage.id);
+          const visiblePageStart = event.data;
+          const visiblePageEnd =
+            bookRef.current?.pageFlip().getOrientation() === 'landscape'
+              ? visiblePageStart + 1
+              : visiblePageStart;
+          const selectedIndex = pages.findIndex((page) => page.id === selectedPageId);
+
+          if (selectedIndex < visiblePageStart || selectedIndex > visiblePageEnd) {
+            const visiblePage = pages[visiblePageStart];
+            if (visiblePage) onSelectPage(visiblePage.id);
+          }
         }}
       >
         {pages.map((page) => (
