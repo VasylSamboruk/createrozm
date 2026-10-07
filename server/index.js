@@ -493,6 +493,24 @@ app.post("/api/coloring", upload.single("image"), async (req, res) => {
   }
 });
 
+app.use("/api", (req, res) => {
+  res.status(404).json({
+    error: "Маршрут API не знайдено.",
+  });
+});
+
+app.use(express.static(path.join(__dirname, "../dist")));
+
+app.use((req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return next();
+  }
+
+  res.sendFile(path.join(__dirname, "../dist/index.html"), (error) => {
+    if (error) next(error);
+  });
+});
+
 // ============================================================
 // MULTER ERROR
 // ============================================================

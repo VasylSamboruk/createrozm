@@ -1,16 +1,35 @@
-# React + Vite
+# Розмальовка
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React/Vite-клієнт і Express API запускаються як один Node.js сервіс. Express віддає production-збірку з `dist` і обробляє API-запити за шляхом `/api`.
 
-Currently, two official plugins are available:
+## Локальний запуск
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Створіть `.env` у корені проєкту:
 
-## React Compiler
+```env
+OPENAI_API_KEY=ваш_ключ_OpenAI
+PORT=3001
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Встановіть залежності та запустіть клієнт і API в різних терміналах:
 
-## Expanding the ESLint configuration
+```sh
+npm install
+npm run server
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+У режимі розробки Vite проксить `/api` на `http://localhost:3001`.
+
+## Розгортання одного сервісу на Railway
+
+Підключіть GitHub-репозиторій і налаштуйте сервіс із кореневою директорією репозиторію:
+
+- Build command: `npm run build`
+- Start command: `npm start`
+- Variable: `OPENAI_API_KEY` зі значенням вашого ключа
+- Healthcheck path: `/api/health`
+
+Railway автоматично надає змінну `PORT`; не задавайте її вручну в Railway. Сервіс обслуговує клієнт і API на одному домені. Перевірте API за адресою `https://<домен-сервісу>/api/health`.
+
+Не завантажуйте `.env` у GitHub і не додавайте ключ OpenAI до клієнтських змінних `VITE_*`.
