@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import HTMLFlipBook from 'react-pageflip';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -11,11 +11,24 @@ const Page = React.forwardRef((props, ref) => {
   );
 });
 
-export default function MagazinePreview({ pages }) {
+export default function MagazinePreview({ pages, selectedPageId, onSelectPage }) {
   const bookRef = useRef(); // Посилання на екземпляр книги
 
-  if (pages.length === 0) return null;
   const bookKey = pages.map(p => p.id).join(',');
+  const goToSelectedPage = useCallback(() => {
+    const pageIndex = pages.findIndex((page) => page.id === selectedPageId);
+    const pageFlip = bookRef.current?.pageFlip();
+    if (pageIndex >= 0 && pageFlip && pageFlip.getCurrentPageIndex() !== pageIndex) {
+      pageFlip.flip(pageIndex);
+    }
+  }, [pages, selectedPageId]);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(goToSelectedPage);
+    return () => cancelAnimationFrame(frame);
+  }, [bookKey, goToSelectedPage]);
+
+  if (pages.length === 0) return null;
 
   // Функції для гортання кнопками
   const goNext = () => bookRef.current.pageFlip().flipNext();
@@ -45,6 +58,11 @@ export default function MagazinePreview({ pages }) {
         usePortrait={false}
         flippingTime={800}
         className="shadow-2xl"
+        onInit={goToSelectedPage}
+        onFlip={(event) => {
+          const selectedPage = pages[event.data];
+          if (selectedPage) onSelectPage(selectedPage.id);
+        }}
       >
         {pages.map((page) => (
           <Page key={page.id}>

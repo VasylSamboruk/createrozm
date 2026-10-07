@@ -3,9 +3,9 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Trash2, FilePlus, ImagePlus, ScanLine } from 'lucide-react';
 
-export default function SortablePage({ page, index, onRemove, onAddBlank, onInsertPhoto, onEditA4 }) {
+export default function SortablePage({ page, index, onRemove, onAddBlank, onInsertPhoto, onEditA4, onSelect }) {
   const fileInputRef = useRef(null);
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: page.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: page.id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -28,7 +28,11 @@ export default function SortablePage({ page, index, onRemove, onAddBlank, onInse
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="bg-white/70 backdrop-blur-md border border-slate-200/60 rounded-xl p-3 shadow-sm flex flex-col gap-2 relative group">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`bg-white/70 backdrop-blur-md border border-slate-200/60 rounded-xl p-3 shadow-sm flex flex-col gap-2 relative group ${isDragging ? 'z-30 opacity-60 shadow-xl' : ''}`}
+    >
       
       {/* Прихований input для вибору файлу */}
       <input 
@@ -39,17 +43,24 @@ export default function SortablePage({ page, index, onRemove, onAddBlank, onInse
         className="hidden" 
       />
 
-      <div {...attributes} {...listeners} className="absolute top-2 left-2 bg-slate-900/80 text-white w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shadow-md z-10 cursor-grab active:cursor-grabbing backdrop-blur-sm">
-        {index + 1}
-      </div>
-
-      <div className="w-full h-32 bg-white/50 border border-slate-200 border-dashed rounded-lg overflow-hidden flex items-center justify-center text-slate-400 text-xs">
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        onClick={() => onSelect(page.id)}
+        className={`relative w-full h-32 bg-white/50 border border-slate-200 border-dashed rounded-lg overflow-hidden flex items-center justify-center text-slate-400 text-xs cursor-grab active:cursor-grabbing touch-none ${page.isSelected ? 'ring-2 ring-blue-500 border-blue-300' : ''}`}
+        title="Перетягніть, щоб змінити порядок; натисніть, щоб відкрити у перегляді"
+        aria-label={`Сторінка ${index + 1}: натисніть для перегляду або перетягніть для зміни порядку`}
+      >
+        <span className="absolute left-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-slate-900/80 text-xs font-bold text-white shadow-md">
+          {index + 1}
+        </span>
         {page.type === 'image' ? (
-          <img src={page.src} className="w-full h-full object-cover" alt="Preview" />
+          <img src={page.src} className="w-full h-full object-contain" alt={`Сторінка ${index + 1}`} />
         ) : (
           'Пуста сторінка'
         )}
-      </div>
+      </button>
 
       {/* Кнопки дій */}
       <div className="flex gap-1">

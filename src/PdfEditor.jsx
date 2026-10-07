@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react';
-import { DndContext, closestCenter } from '@dnd-kit/core';
-import { arrayMove } from '@dnd-kit/sortable';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors
+} from '@dnd-kit/core';
+import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { jsPDF } from 'jspdf';
 import { FileUp, Download, Trash2, Layers, BookOpen, Printer, Image } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import MagazinePreview from './components/MagazinePreview';
 import A4PageEditor from './components/A4PageEditor';
+import CoverUploadModal from './components/CoverUploadModal';
 
 const loadImage = (src) => new Promise((resolve, reject) => {
   const image = new window.Image();
@@ -17,6 +25,12 @@ const loadImage = (src) => new Promise((resolve, reject) => {
 export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded }) {
   const [pages, setPages] = useState([]);
   const [editingPage, setEditingPage] = useState(null);
+  const [isCoverModalOpen, setIsCoverModalOpen] = useState(false);
+  const [selectedPageId, setSelectedPageId] = useState(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   useEffect(() => {
     if (!initialImages?.length) return;
@@ -36,6 +50,7 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
       .then((newPages) => {
         if (!cancelled) {
           setPages((current) => [...current, ...newPages]);
+          setSelectedPageId((current) => current || newPages[0]?.id || null);
           onInitialImagesLoaded?.();
         }
       })
@@ -110,7 +125,50 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
       })
     );
     setPages((prev) => [...prev, ...newPages]);
+    setSelectedPageId((current) => current || newPages[0]?.id || null);
     e.target.value = ''; 
+  };
+
+  const preparePageFromFile = async (file) => {
+    const sourceUrl = URL.createObjectURL(file);
+    try {
+      const image = await loadImage(sourceUrl);
+      const ratio = Math.min(1, 2480 / image.width, 3508 / image.height);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.width * ratio));
+      canvas.height = Math.max(1, Math.round(image.height * ratio));
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Не вдалося підготувати обкладинку.');
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const src = canvas.toDataURL('image/jpeg', 0.9);
+      const imgObj = await loadImage(src);
+      return {
+        id: crypto.randomUUID(),
+        type: 'image',
+        name: file.name,
+        src,
+        sourceSrc: src,
+        imgObj
+      };
+    } finally {
+      URL.revokeObjectURL(sourceUrl);
+    }
+  };
+
+  const handleAddCovers = async (frontFile, backFile) => {
+    try {
+      const [frontCover, backCover] = await Promise.all([
+        preparePageFromFile(frontFile),
+        preparePageFromFile(backFile)
+      ]);
+      setPages((current) => [frontCover, ...current, backCover]);
+      setSelectedPageId(frontCover.id);
+      setIsCoverModalOpen(false);
+    } catch (error) {
+      console.error('Не вдалося додати обкладинки:', error);
+      alert(error?.message || 'Не вдалося додати обкладинки.');
+      throw error;
+    }
   };
 
   // Вставка нового фото після конкретної сторінки
@@ -165,8 +223,22 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
     });
   };
 
-  const handleRemovePage = (id) => setPages(pages.filter(p => p.id !== id));
-  const handleClearAll = () => { if (confirm('Видалити всі сторінки?')) setPages([]); };
+  const handleRemovePage = (id) => {
+    setPages((current) => {
+      const index = current.findIndex((page) => page.id === id);
+      const updated = current.filter((page) => page.id !== id);
+      if (selectedPageId === id) {
+        setSelectedPageId(updated[Math.min(index, updated.length - 1)]?.id || null);
+      }
+      return updated;
+    });
+  };
+  const handleClearAll = () => {
+    if (confirm('Видалити всі сторінки?')) {
+      setPages([]);
+      setSelectedPageId(null);
+    }
+  };
 
   // Drag & Drop
   const handleDragEnd = (event) => {
@@ -238,16 +310,6 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
     }
   };
 
-  // ЕКСПОРТ 1: Обкладинка
-  const exportCover = () => {
-    if (pages.length < 2) return alert('Потрібно мінімум 2 сторінки для обкладинки!');
-    const doc = createPrintReadyPDF();
-    
-    addPageToPDF(doc, pages[0], true, false); 
-    addPageToPDF(doc, pages[pages.length - 1], false, false); 
-    doc.save('Obkladynka_Kolir.pdf');
-  };
-
   // ЕКСПОРТ 2: Середина Ч/Б
   const exportInnerBW = () => {
     if (pages.length <= 2) return alert('Немає внутрішніх сторінок!');
@@ -297,7 +359,7 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
           </div>
           
           <div className="flex gap-2 border-l border-slate-300 pl-4">
-            <button onClick={exportCover} className="bg-fuchsia-100 hover:bg-fuchsia-200 text-fuchsia-700 px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-all active:scale-95">
+            <button onClick={() => setIsCoverModalOpen(true)} className="bg-fuchsia-100 hover:bg-fuchsia-200 text-fuchsia-700 px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-all active:scale-95">
               <Image size={16} /> Обкладинка
             </button>
             <button onClick={exportInnerBW} className="bg-slate-200 hover:bg-slate-300 text-slate-800 px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-all active:scale-95">
@@ -312,19 +374,32 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
       </header>
 
       <main className="flex-1 flex overflow-hidden relative">
-        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <Sidebar
             pages={pages}
             onRemove={handleRemovePage}
             onAddBlank={handleAddBlank}
             onInsertPhoto={handleInsertPhoto}
             onEditA4={setEditingPage}
+            onSelectPage={setSelectedPageId}
+            selectedPageId={selectedPageId}
           />
         </DndContext>
         
         <div className="absolute inset-0 z-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
-        <MagazinePreview pages={pages} />
+        <MagazinePreview
+          pages={pages}
+          selectedPageId={selectedPageId}
+          onSelectPage={setSelectedPageId}
+        />
       </main>
+
+      {isCoverModalOpen && (
+        <CoverUploadModal
+          onClose={() => setIsCoverModalOpen(false)}
+          onAddCovers={handleAddCovers}
+        />
+      )}
 
       {editingPage && (
         <A4PageEditor
