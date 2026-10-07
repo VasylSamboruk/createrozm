@@ -14,13 +14,7 @@ import Sidebar from './components/Sidebar';
 import MagazinePreview from './components/MagazinePreview';
 import A4PageEditor from './components/A4PageEditor';
 import CoverUploadModal from './components/CoverUploadModal';
-
-const loadImage = (src) => new Promise((resolve, reject) => {
-  const image = new window.Image();
-  image.onload = () => resolve(image);
-  image.onerror = () => reject(new Error('Не вдалося завантажити зображення для PDF.'));
-  image.src = src;
-});
+import { prepareA4Image } from './utils/prepareA4Image';
 
 export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded }) {
   const [pages, setPages] = useState([]);
@@ -37,14 +31,12 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
     let cancelled = false;
 
     Promise.all(initialImages.map(async ({ name, src }) => {
-      const imgObj = await loadImage(src);
+      const preparedImage = await prepareA4Image(src);
       return {
         id: crypto.randomUUID(),
         type: 'image',
         name,
-        src,
-        sourceSrc: src,
-        imgObj
+        ...preparedImage
       };
     }))
       .then((newPages) => {
@@ -67,7 +59,12 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
   }, [initialImages, onInitialImagesLoaded]);
 
   const handleApplyA4 = async (pageId, src) => {
-    const imgObj = await loadImage(src);
+    const imgObj = new window.Image();
+    await new Promise((resolve, reject) => {
+      imgObj.onload = resolve;
+      imgObj.onerror = () => reject(new Error('Не вдалося оновити сторінку A4.'));
+      imgObj.src = src;
+    });
     setPages((current) =>
       current.map((page) => page.id === pageId
         ? { ...page, src, sourceSrc: page.sourceSrc || page.src, imgObj, a4Prepared: true }
@@ -81,74 +78,37 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
 
-    const newPages = await Promise.all(
-      files.map((file) => {
-        return new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            const img = new window.Image();
-            img.onload = () => {
-              // Створюємо Canvas для зменшення зображення до стандарту 300 DPI (А4)
-              const canvas = document.createElement('canvas');
-              const MAX_WIDTH = 2480; 
-              const MAX_HEIGHT = 3508; 
-              
-              let width = img.width;
-              let height = img.height;
-
-              // Якщо фото більше за А4, пропорційно його зменшуємо
-              if (width > MAX_WIDTH || height > MAX_HEIGHT) {
-                const ratio = Math.min(MAX_WIDTH / width, MAX_HEIGHT / height);
-                width = width * ratio;
-                height = height * ratio;
-              }
-
-              canvas.width = width;
-              canvas.height = height;
-              const ctx = canvas.getContext('2d');
-              ctx.drawImage(img, 0, 0, width, height);
-
-              // Конвертуємо оптимізоване зображення у JPEG з якістю 85%
-              const optimizedSrc = canvas.toDataURL('image/jpeg', 0.85);
-
-              // Зберігаємо оптимізований варіант для PDF
-              const optimizedImg = new window.Image();
-              optimizedImg.onload = () => {
-                resolve({ id: crypto.randomUUID(), type: 'image', src: optimizedSrc, sourceSrc: optimizedSrc, imgObj: optimizedImg });
-              };
-              optimizedImg.src = optimizedSrc;
-            };
-            img.src = e.target.result;
+    try {
+      const newPages = await Promise.all(files.map(async (file) => {
+        const sourceUrl = URL.createObjectURL(file);
+        try {
+          return {
+            id: crypto.randomUUID(),
+            type: 'image',
+            name: file.name,
+            ...await prepareA4Image(sourceUrl)
           };
-          reader.readAsDataURL(file);
-        });
-      })
-    );
-    setPages((prev) => [...prev, ...newPages]);
-    setSelectedPageId((current) => current || newPages[0]?.id || null);
+        } finally {
+          URL.revokeObjectURL(sourceUrl);
+        }
+      }));
+      setPages((prev) => [...prev, ...newPages]);
+      setSelectedPageId((current) => current || newPages[0]?.id || null);
+    } catch (error) {
+      console.error('Не вдалося додати фото до журналу:', error);
+      alert(error?.message || 'Не вдалося підготувати одне з фото для A4.');
+    }
     e.target.value = ''; 
   };
 
   const preparePageFromFile = async (file) => {
     const sourceUrl = URL.createObjectURL(file);
     try {
-      const image = await loadImage(sourceUrl);
-      const ratio = Math.min(1, 2480 / image.width, 3508 / image.height);
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(image.width * ratio));
-      canvas.height = Math.max(1, Math.round(image.height * ratio));
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('Не вдалося підготувати обкладинку.');
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      const src = canvas.toDataURL('image/jpeg', 0.9);
-      const imgObj = await loadImage(src);
       return {
         id: crypto.randomUUID(),
         type: 'image',
         name: file.name,
-        src,
-        sourceSrc: src,
-        imgObj
+        ...await prepareA4Image(sourceUrl)
       };
     } finally {
       URL.revokeObjectURL(sourceUrl);
@@ -172,20 +132,27 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
   };
 
   // Вставка нового фото після конкретної сторінки
-  const handleInsertPhoto = (index, file) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new window.Image();
-      img.onload = () => {
-        setPages((prev) => {
-          const newPages = [...prev];
-          newPages.splice(index + 1, 0, { id: crypto.randomUUID(), type: 'image', src: e.target.result, sourceSrc: e.target.result, imgObj: img });
-          return newPages;
-        });
+  const handleInsertPhoto = async (index, file) => {
+    const sourceUrl = URL.createObjectURL(file);
+    try {
+      const page = {
+        id: crypto.randomUUID(),
+        type: 'image',
+        name: file.name,
+        ...await prepareA4Image(sourceUrl)
       };
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
+      setPages((current) => {
+        const updated = [...current];
+        updated.splice(index + 1, 0, page);
+        return updated;
+      });
+      setSelectedPageId(page.id);
+    } catch (error) {
+      console.error('Не вдалося вставити фото до журналу:', error);
+      alert(error?.message || 'Не вдалося підготувати фото для A4.');
+    } finally {
+      URL.revokeObjectURL(sourceUrl);
+    }
   };
 
   // Розумний Авто-формат
