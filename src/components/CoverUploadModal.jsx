@@ -47,10 +47,19 @@ export default function CoverUploadModal({ onClose, onAddCovers }) {
   const frontInputRef = useRef(null);
   const backInputRef = useRef(null);
 
-  useEffect(() => () => {
-    if (covers.front?.preview) URL.revokeObjectURL(covers.front.preview);
-    if (covers.back?.preview) URL.revokeObjectURL(covers.back.preview);
-  }, [covers.front?.preview, covers.back?.preview]);
+  useEffect(() => {
+    const preview = covers.front?.preview;
+    return () => {
+      if (preview) URL.revokeObjectURL(preview);
+    };
+  }, [covers.front?.preview]);
+
+  useEffect(() => {
+    const preview = covers.back?.preview;
+    return () => {
+      if (preview) URL.revokeObjectURL(preview);
+    };
+  }, [covers.back?.preview]);
 
   const handleFileChange = (side) => (event) => {
     const file = event.target.files?.[0];
