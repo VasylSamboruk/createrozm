@@ -9,7 +9,7 @@ import {
 } from '@dnd-kit/core';
 import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { jsPDF } from 'jspdf';
-import { FileUp, Download, Trash2, Layers, BookOpen, Printer, Image } from 'lucide-react';
+import { FileUp, FileText, Download, Trash2, Layers, Image } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import MagazinePreview from './components/MagazinePreview';
 import A4PageEditor from './components/A4PageEditor';
@@ -20,6 +20,8 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
   const [pages, setPages] = useState([]);
   const [editingPage, setEditingPage] = useState(null);
   const [isCoverModalOpen, setIsCoverModalOpen] = useState(false);
+  const [isImportingPdf, setIsImportingPdf] = useState(false);
+  const [pdfImportProgress, setPdfImportProgress] = useState('');
   const [selectedPageId, setSelectedPageId] = useState(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -101,6 +103,32 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
     e.target.value = ''; 
   };
 
+  const handlePdfUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setIsImportingPdf(true);
+    setPdfImportProgress('Читаю PDF…');
+
+    try {
+      const { importPdfPages } = await import('./utils/importPdfPages');
+      const importedPages = await importPdfPages(file, (current, total) => {
+        setPdfImportProgress(`Оброблено сторінок: ${current}/${total}`);
+      });
+      if (importedPages.length === 0) {
+        throw new Error('У PDF немає сторінок для імпорту.');
+      }
+      setPages((current) => [...current, ...importedPages]);
+      setSelectedPageId(importedPages[0].id);
+    } catch (error) {
+      console.error('Не вдалося імпортувати PDF:', error);
+      alert(error?.message || 'Не вдалося відкрити PDF. Перевірте файл і спробуйте ще раз.');
+    } finally {
+      setIsImportingPdf(false);
+      setPdfImportProgress('');
+      event.target.value = '';
+    }
+  };
+
   const preparePageFromFile = async (file) => {
     const sourceUrl = URL.createObjectURL(file);
     try {
@@ -155,6 +183,27 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
     }
   };
 
+  const handleReplacePage = async (index, file) => {
+    const sourceUrl = URL.createObjectURL(file);
+    try {
+      const replacement = {
+        id: crypto.randomUUID(),
+        type: 'image',
+        name: file.name,
+        ...await prepareA4Image(sourceUrl)
+      };
+      setPages((current) => current.map((page, pageIndex) =>
+        pageIndex === index ? replacement : page
+      ));
+      setSelectedPageId(replacement.id);
+    } catch (error) {
+      console.error('Не вдалося замінити сторінку:', error);
+      alert(error?.message || 'Не вдалося замінити сторінку.');
+    } finally {
+      URL.revokeObjectURL(sourceUrl);
+    }
+  };
+
   // Розумний Авто-формат
   const handleAutoFormat = () => {
     if (pages.length === 0) return;
@@ -166,19 +215,6 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
       }
     });
     setPages(newPages);
-  };
-
-  // КРАТНЕ 4 (Для друку на скобу)
-  const padToMultipleOf4 = () => {
-    if (pages.length === 0) return alert('Додайте сторінки!');
-    const remainder = pages.length % 4;
-    if (remainder === 0) return alert('Журнал вже має кількість сторінок, кратну 4! Все ідеально.');
-    
-    const needed = 4 - remainder;
-    const blankPages = Array(needed).fill(null).map(() => ({ id: crypto.randomUUID(), type: 'blank' }));
-    
-    setPages((prev) => [...prev, ...blankPages]);
-    alert(`Додано ${needed} білих сторінок у кінець для формату "на скобу".`);
   };
 
   // Додавання білої сторінки вручну
@@ -219,23 +255,6 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
     }
   };
 
-  // Переведення картинки в ЧБ (Grayscale)
-  const convertToGrayscale = (imgObj) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = imgObj.width;
-    canvas.height = imgObj.height;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(imgObj, 0, 0);
-    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imgData.data;
-    for (let i = 0; i < data.length; i += 4) {
-      const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-      data[i] = avg; data[i + 1] = avg; data[i + 2] = avg;
-    }
-    ctx.putImageData(imgData, 0, 0);
-    return canvas.toDataURL('image/jpeg', 0.95);
-  };
-
   // Спеціальний ініціалізатор jsPDF з жорсткими стандартами друку (А4: 210 x 297 мм)
   const createPrintReadyPDF = () => {
     return new jsPDF({
@@ -247,7 +266,7 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
   };
 
   // Додавання сторінки з ідеальним калібруванням під А4
-  const addPageToPDF = (doc, page, isFirst, forceGrayscale = false) => {
+  const addPageToPDF = (doc, page, isFirst) => {
     if (!isFirst) {
       doc.addPage('a4', 'portrait');
     }
@@ -271,22 +290,9 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
       x = (pageWidth - finalWidth) / 2;
       y = (pageHeight - finalHeight) / 2;
 
-      const imgSrc = forceGrayscale ? convertToGrayscale(page.imgObj) : page.src;
       // Використовуємо 'SLOW' або 'MEDIUM' замість 'FAST' для максимальної якості друку
-      doc.addImage(imgSrc, 'JPEG', x, y, finalWidth, finalHeight, undefined, 'MEDIUM');
+      doc.addImage(page.src, 'JPEG', x, y, finalWidth, finalHeight, undefined, 'MEDIUM');
     }
-  };
-
-  // ЕКСПОРТ 2: Середина Ч/Б
-  const exportInnerBW = () => {
-    if (pages.length <= 2) return alert('Немає внутрішніх сторінок!');
-    const doc = createPrintReadyPDF();
-    
-    const innerPages = pages.slice(1, pages.length - 1);
-    innerPages.forEach((page, i) => {
-      addPageToPDF(doc, page, i === 0, true); 
-    });
-    doc.save('Seredyna_ChornoBila.pdf');
   };
 
   // ЕКСПОРТ 3: Повний PDF (Пружина / Кратне 4)
@@ -311,14 +317,16 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
               <FileUp size={16} /> + Завантажити
               <input type="file" multiple accept="image/*" onChange={handleFileUpload} className="hidden" />
             </label>
+            <label className={`bg-violet-100 hover:bg-violet-200 text-violet-700 px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-all shadow-sm ${isImportingPdf ? 'pointer-events-none opacity-60' : 'cursor-pointer'}`}>
+              <FileText size={16} />
+              {isImportingPdf ? pdfImportProgress : 'Завантажити PDF'}
+              <input type="file" accept="application/pdf,.pdf" onChange={handlePdfUpload} disabled={isImportingPdf} className="hidden" />
+            </label>
             <button onClick={onBack} className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium text-sm transition-all shadow-md active:scale-95 mr-4">
               ← В меню
             </button>
             <button onClick={handleAutoFormat} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-all active:scale-95">
               <Layers size={16} /> Фото+Біла
-            </button>
-            <button onClick={padToMultipleOf4} className="bg-amber-50 hover:bg-amber-100 text-amber-600 px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-all active:scale-95" title="Додасть пусті сторінки в кінець, щоб загальна кількість ділилась на 4">
-              <BookOpen size={16} /> Кратне 4 (на скобу)
             </button>
             <button onClick={handleClearAll} className="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-2 rounded-lg transition-all active:scale-95">
               <Trash2 size={16} />
@@ -328,9 +336,6 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
           <div className="flex gap-2 border-l border-slate-300 pl-4">
             <button onClick={() => setIsCoverModalOpen(true)} className="bg-fuchsia-100 hover:bg-fuchsia-200 text-fuchsia-700 px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-all active:scale-95">
               <Image size={16} /> Обкладинка
-            </button>
-            <button onClick={exportInnerBW} className="bg-slate-200 hover:bg-slate-300 text-slate-800 px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-all active:scale-95">
-              <Printer size={16} /> Середина (Ч/Б)
             </button>
             <button onClick={exportFullPDF} className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all shadow-md active:scale-95">
               <Download size={16} /> ПОВНИЙ PDF
@@ -347,6 +352,7 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
             onRemove={handleRemovePage}
             onAddBlank={handleAddBlank}
             onInsertPhoto={handleInsertPhoto}
+            onReplacePage={handleReplacePage}
             onEditA4={setEditingPage}
             onSelectPage={setSelectedPageId}
             selectedPageId={selectedPageId}

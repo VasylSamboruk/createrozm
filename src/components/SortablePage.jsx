@@ -1,10 +1,11 @@
 import { useRef } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Trash2, FilePlus, ImagePlus, ScanLine } from 'lucide-react';
+import { Trash2, FilePlus, ImagePlus, ScanLine, Replace } from 'lucide-react';
 
-export default function SortablePage({ page, index, onRemove, onAddBlank, onInsertPhoto, onEditA4, onSelect }) {
+export default function SortablePage({ page, index, onRemove, onAddBlank, onInsertPhoto, onReplacePage, onEditA4, onSelect }) {
   const fileInputRef = useRef(null);
+  const replaceInputRef = useRef(null);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: page.id });
 
   const style = {
@@ -27,6 +28,12 @@ export default function SortablePage({ page, index, onRemove, onAddBlank, onInse
     e.target.value = ''; // Скидаємо, щоб можна було обрати той самий файл знову
   };
 
+  const handleReplaceFileChange = (event) => {
+    const file = event.target.files?.[0];
+    if (file) onReplacePage(index, file);
+    event.target.value = '';
+  };
+
   return (
     <div
       ref={setNodeRef}
@@ -41,6 +48,13 @@ export default function SortablePage({ page, index, onRemove, onAddBlank, onInse
         onChange={handleFileChange} 
         accept="image/*" 
         className="hidden" 
+      />
+      <input
+        type="file"
+        ref={replaceInputRef}
+        onChange={handleReplaceFileChange}
+        accept="image/*"
+        className="hidden"
       />
 
       <button
@@ -79,6 +93,15 @@ export default function SortablePage({ page, index, onRemove, onAddBlank, onInse
             <span className="ml-1 text-[10px] font-semibold">A4</span>
           </button>
         )}
+
+        <button
+          type="button"
+          onClick={() => replaceInputRef.current?.click()}
+          className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-700 py-1.5 rounded-lg flex justify-center transition-colors"
+          title="Замінити цю сторінку фотографією"
+        >
+          <Replace size={16} />
+        </button>
         
         {/* Кнопка вставки фото */}
         <button 
