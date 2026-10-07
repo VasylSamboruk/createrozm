@@ -12,10 +12,11 @@ import {
   Wand2,
   Sparkles,
   Layers,
-  RefreshCw
+  RefreshCw,
+  BookOpen
 } from 'lucide-react';
 
-export default function AiColoringEditor({ onBack }) {
+export default function AiColoringEditor({ onBack, onSendToPdf }) {
   const [items, setItems] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [isProcessingAll, setIsProcessingAll] = useState(false);
@@ -149,7 +150,7 @@ ${item.settings?.prompt || ''}
       body: formData
     });
 
-    let data = null;
+    let data;
 
     try {
       data = await response.json();
@@ -402,6 +403,18 @@ ${item.settings?.prompt || ''}
     );
   };
 
+  const handleSendToPdf = () => {
+    const completedImages = items.flatMap((item) => {
+      if (item.status !== 'completed' || item.versions.length === 0) return [];
+      const activeVersion = item.versions[item.activeVersionIndex];
+      return activeVersion?.url
+        ? [{ name: item.name, src: activeVersion.url }]
+        : [];
+    });
+
+    if (completedImages.length > 0) onSendToPdf(completedImages);
+  };
+
   // ============================================================
   // АКТИВНЕ ФОТО
   // ============================================================
@@ -488,6 +501,22 @@ ${item.settings?.prompt || ''}
               ? 'Обробка черги...'
               : 'Запустити генерацію'}
 
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSendToPdf}
+            disabled={
+              items.filter(
+                (item) => item.status === 'completed' && item.versions.length > 0
+              ).length === 0
+            }
+            className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-lg transition-all hover:bg-blue-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <BookOpen size={14} />
+            У PDF ({items.filter(
+              (item) => item.status === 'completed' && item.versions.length > 0
+            ).length})
           </button>
 
           {/* ZIP */}

@@ -1,7 +1,7 @@
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import SortablePage from './SortablePage';
 
-export default function Sidebar({ pages, onRemove, onAddBlank, onInsertPhoto }) {
+export default function Sidebar({ pages, onRemove, onAddBlank, onInsertPhoto, onEditA4 }) {
   return (
     <div className="w-80 h-full bg-white/40 backdrop-blur-xl border-r border-slate-200/50 p-4 overflow-y-auto shadow-2xl z-10 flex flex-col gap-4">
       {pages.length === 0 ? (
@@ -18,6 +18,7 @@ export default function Sidebar({ pages, onRemove, onAddBlank, onInsertPhoto }) 
               onRemove={onRemove}
               onAddBlank={onAddBlank}
               onInsertPhoto={onInsertPhoto}
+              onEditA4={onEditA4}
             />
           ))}
         </SortableContext>

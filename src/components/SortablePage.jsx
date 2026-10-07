@@ -1,9 +1,9 @@
 import { useRef } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Trash2, FilePlus, ImagePlus } from 'lucide-react';
+import { Trash2, FilePlus, ImagePlus, ScanLine } from 'lucide-react';
 
-export default function SortablePage({ page, index, onRemove, onAddBlank, onInsertPhoto }) {
+export default function SortablePage({ page, index, onRemove, onAddBlank, onInsertPhoto, onEditA4 }) {
   const fileInputRef = useRef(null);
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: page.id });
 
@@ -56,6 +56,18 @@ export default function SortablePage({ page, index, onRemove, onAddBlank, onInse
         <button onClick={() => onRemove(page.id)} className="flex-1 bg-red-50 hover:bg-red-100 text-red-500 py-1.5 rounded-lg flex justify-center transition-colors" title="Видалити">
           <Trash2 size={16} />
         </button>
+
+        {page.type === 'image' && (
+          <button
+            type="button"
+            onClick={() => onEditA4(page)}
+            className="flex-1 bg-violet-50 hover:bg-violet-100 text-violet-600 py-1.5 rounded-lg flex justify-center transition-colors"
+            title="Кадрувати фото для друку A4"
+          >
+            <ScanLine size={14} />
+            <span className="ml-1 text-[10px] font-semibold">A4</span>
+          </button>
+        )}
         
         {/* Кнопка вставки фото */}
         <button 

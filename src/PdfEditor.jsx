@@ -1,13 +1,64 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DndContext, closestCenter } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import { jsPDF } from 'jspdf';
 import { FileUp, Download, Trash2, Layers, BookOpen, Printer, Image } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import MagazinePreview from './components/MagazinePreview';
+import A4PageEditor from './components/A4PageEditor';
 
-export default function PdfEditor({ onBack }) {
+const loadImage = (src) => new Promise((resolve, reject) => {
+  const image = new window.Image();
+  image.onload = () => resolve(image);
+  image.onerror = () => reject(new Error('Не вдалося завантажити зображення для PDF.'));
+  image.src = src;
+});
+
+export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded }) {
   const [pages, setPages] = useState([]);
+  const [editingPage, setEditingPage] = useState(null);
+
+  useEffect(() => {
+    if (!initialImages?.length) return;
+    let cancelled = false;
+
+    Promise.all(initialImages.map(async ({ name, src }) => {
+      const imgObj = await loadImage(src);
+      return {
+        id: crypto.randomUUID(),
+        type: 'image',
+        name,
+        src,
+        sourceSrc: src,
+        imgObj
+      };
+    }))
+      .then((newPages) => {
+        if (!cancelled) {
+          setPages((current) => [...current, ...newPages]);
+          onInitialImagesLoaded?.();
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error('Не вдалося передати AI-зображення у PDF:', error);
+          alert(error?.message || 'Не вдалося додати AI-зображення у PDF.');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialImages, onInitialImagesLoaded]);
+
+  const handleApplyA4 = async (pageId, src) => {
+    const imgObj = await loadImage(src);
+    setPages((current) =>
+      current.map((page) => page.id === pageId
+        ? { ...page, src, sourceSrc: page.sourceSrc || page.src, imgObj, a4Prepared: true }
+        : page)
+    );
+  };
 
   // Завантаження файлів (в кінець)
   // Завантаження файлів з автоматичною оптимізацією для друкарні (300 DPI)
@@ -48,7 +99,7 @@ export default function PdfEditor({ onBack }) {
               // Зберігаємо оптимізований варіант для PDF
               const optimizedImg = new window.Image();
               optimizedImg.onload = () => {
-                resolve({ id: crypto.randomUUID(), type: 'image', src: optimizedSrc, imgObj: optimizedImg });
+                resolve({ id: crypto.randomUUID(), type: 'image', src: optimizedSrc, sourceSrc: optimizedSrc, imgObj: optimizedImg });
               };
               optimizedImg.src = optimizedSrc;
             };
@@ -70,7 +121,7 @@ export default function PdfEditor({ onBack }) {
       img.onload = () => {
         setPages((prev) => {
           const newPages = [...prev];
-          newPages.splice(index + 1, 0, { id: crypto.randomUUID(), type: 'image', src: e.target.result, imgObj: img });
+          newPages.splice(index + 1, 0, { id: crypto.randomUUID(), type: 'image', src: e.target.result, sourceSrc: e.target.result, imgObj: img });
           return newPages;
         });
       };
@@ -262,13 +313,27 @@ export default function PdfEditor({ onBack }) {
 
       <main className="flex-1 flex overflow-hidden relative">
         <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <Sidebar pages={pages} onRemove={handleRemovePage} onAddBlank={handleAddBlank} onInsertPhoto={handleInsertPhoto} />
+          <Sidebar
+            pages={pages}
+            onRemove={handleRemovePage}
+            onAddBlank={handleAddBlank}
+            onInsertPhoto={handleInsertPhoto}
+            onEditA4={setEditingPage}
+          />
         </DndContext>
         
         <div className="absolute inset-0 z-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
         <MagazinePreview pages={pages} />
       </main>
 
+      {editingPage && (
+        <A4PageEditor
+          key={editingPage.id}
+          page={editingPage}
+          onClose={() => setEditingPage(null)}
+          onApply={(src) => handleApplyA4(editingPage.id, src)}
+        />
+      )}
     </div>
   );
 }
