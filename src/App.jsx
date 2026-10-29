@@ -1,7 +1,8 @@
 import { useCallback, useState } from 'react';
 import PdfEditor from './PdfEditor';
 import AiColoringEditor from './AiColoringEditor';
-import { Layers, Sparkles } from 'lucide-react';
+import StickerCalendarEditor from './StickerCalendarEditor';
+import { CalendarDays, Layers, Sparkles } from 'lucide-react';
 
 export default function App() {
   const [appMode, setAppMode] = useState(null);
@@ -33,6 +34,9 @@ export default function App() {
       />
     );
   }
+  if (appMode === 'sticker-calendar') {
+    return <StickerCalendarEditor onBack={() => setAppMode(null)} />;
+  }
 
   return (
     <div className="h-screen w-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 p-6">
@@ -60,6 +64,17 @@ export default function App() {
           </div>
           <h2 className="text-xl font-semibold text-slate-700">PDF Редактор</h2>
           <p className="text-sm text-slate-500 text-center">Підготовка фото A4, перегляд журналу та експорт PDF.</p>
+        </button>
+
+        <button
+          onClick={() => setAppMode('sticker-calendar')}
+          className="flex w-64 cursor-pointer flex-col items-center gap-4 rounded-2xl border border-white/40 bg-white/70 p-8 shadow-sm backdrop-blur-xl transition-all hover:-translate-y-1 hover:shadow-md"
+        >
+          <div className="rounded-full bg-emerald-100 p-4 text-emerald-600">
+            <CalendarDays size={40} />
+          </div>
+          <h2 className="text-xl font-semibold text-slate-700">Наклейки та календарики</h2>
+          <p className="text-center text-sm text-slate-500">2 горизонтальні календарики на A4 або 1 вертикальний аркуш наклейок.</p>
         </button>
 
       </div>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Cropper from 'react-easy-crop';
-import { Save, Sticker, X, ZoomIn } from 'lucide-react';
+import { RotateCw, Save, Sticker, X, ZoomIn } from 'lucide-react';
 
 const A4_WIDTH = 2480;
 const A4_HEIGHT = 3508;
@@ -83,6 +83,7 @@ function DraggableSticker({ sticker, containerRef, onChange, onRemove }) {
 export default function A4PageEditor({ page, onClose, onApply }) {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
+  const [rotation, setRotation] = useState(0);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
   const [stickers, setStickers] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -123,14 +124,25 @@ export default function A4PageEditor({ page, onClose, onApply }) {
 
     try {
       const image = await loadImage(page.sourceSrc || page.src);
+      const rotatedCanvas = document.createElement('canvas');
+      const angle = (rotation * Math.PI) / 180;
+      const sin = Math.abs(Math.sin(angle));
+      const cos = Math.abs(Math.cos(angle));
+      rotatedCanvas.width = Math.round(image.width * cos + image.height * sin);
+      rotatedCanvas.height = Math.round(image.width * sin + image.height * cos);
+      const rotatedContext = rotatedCanvas.getContext('2d');
+      if (!rotatedContext) throw new Error('Не вдалося підготувати повернуте полотно.');
+      rotatedContext.translate(rotatedCanvas.width / 2, rotatedCanvas.height / 2);
+      rotatedContext.rotate(angle);
+      rotatedContext.drawImage(image, -image.width / 2, -image.height / 2);
+
       const canvas = document.createElement('canvas');
       canvas.width = A4_WIDTH;
       canvas.height = A4_HEIGHT;
       const context = canvas.getContext('2d');
       if (!context) throw new Error('Не вдалося підготувати полотно A4.');
-
       context.drawImage(
-        image,
+        rotatedCanvas,
         croppedAreaPixels.x,
         croppedAreaPixels.y,
         croppedAreaPixels.width,
@@ -192,9 +204,11 @@ export default function A4PageEditor({ page, onClose, onApply }) {
             image={page.sourceSrc || page.src}
             crop={crop}
             zoom={zoom}
+            rotation={rotation}
             aspect={A4_WIDTH / A4_HEIGHT}
             onCropChange={setCrop}
             onZoomChange={setZoom}
+            onRotationChange={setRotation}
             onCropComplete={onCropComplete}
             showGrid
           />
@@ -245,6 +259,13 @@ export default function A4PageEditor({ page, onClose, onApply }) {
               onChange={(event) => setZoom(Number(event.target.value))}
               className="w-40 accent-blue-600"
             />
+            <button
+              type="button"
+              onClick={() => setRotation((value) => (value + 90) % 360)}
+              className="flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200"
+            >
+              <RotateCw size={16} /> {rotation}°
+            </button>
             <button
               type="button"
               onClick={() => stickerInputRef.current?.click()}
