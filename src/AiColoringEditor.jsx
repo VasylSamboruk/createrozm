@@ -288,73 +288,75 @@ export default function AiColoringEditor({ onBack, onSendToPdf }) {
         : item.status === 'pending' || item.status === 'error'
     );
 
-    for (const item of pendingItems) {
-      setItems((prev) =>
-        prev.map((i) =>
-          i.id === item.id
-            ? {
-                ...i,
-                status: 'processing',
-                progressText: includeCompleted
-                  ? 'Перегенерація...'
-                  : 'AI створює розмальовку...'
-              }
-            : i
-        )
-      );
-
-      try {
-        const result = await generateColoring(item);
-        setItems((prev) =>
-          prev.map((i) => {
-            if (i.id !== item.id) return i;
-
-            const newVersion = {
-              id: crypto.randomUUID(),
-              url: result.image,
-              prompt: i.settings.prompt,
-              settings: { ...i.settings },
-              tokenUsage: result.tokenUsage,
-              elapsedSeconds: result.elapsedSeconds
-            };
-
-            const updatedVersions = [
-              ...i.versions,
-              newVersion
-            ];
-
-            return {
-              ...i,
-              status: 'completed',
-              progressText: 'Готово',
-              versions: updatedVersions,
-              activeVersionIndex:
-                updatedVersions.length - 1
-            };
-          })
-        );
-      } catch (error) {
-        console.error(
-          `Помилка обробки ${item.name}:`,
-          error
-        );
-
+    try {
+      for (const item of pendingItems) {
         setItems((prev) =>
           prev.map((i) =>
             i.id === item.id
               ? {
                   ...i,
-                  status: 'error',
-                  progressText:
-                    error?.message || 'Помилка API'
+                  status: 'processing',
+                  progressText: includeCompleted
+                    ? 'Перегенерація...'
+                    : 'AI створює розмальовку...'
                 }
               : i
           )
         );
-      }
-    }
 
-    setIsProcessingAll(false);
+        try {
+          const result = await generateColoring(item);
+          setItems((prev) =>
+            prev.map((i) => {
+              if (i.id !== item.id) return i;
+
+              const newVersion = {
+                id: crypto.randomUUID(),
+                url: result.image,
+                prompt: i.settings.prompt,
+                settings: { ...i.settings },
+                tokenUsage: result.tokenUsage,
+                elapsedSeconds: result.elapsedSeconds
+              };
+
+              const updatedVersions = [
+                ...i.versions,
+                newVersion
+              ];
+
+              return {
+                ...i,
+                status: 'completed',
+                progressText: 'Готово',
+                versions: updatedVersions,
+                activeVersionIndex:
+                  updatedVersions.length - 1
+              };
+            })
+          );
+        } catch (error) {
+          console.error(
+            `Помилка обробки ${item.name}:`,
+            error
+          );
+
+          setItems((prev) =>
+            prev.map((i) =>
+              i.id === item.id
+                ? {
+                    ...i,
+                    status: 'error',
+                    progressText:
+                      error?.message || 'Помилка API'
+                  }
+                : i
+            )
+          );
+        }
+      }
+    } finally {
+      setIsProcessingAll(false);
+    }
   };
 
   // ============================================================
@@ -614,7 +616,7 @@ export default function AiColoringEditor({ onBack, onSendToPdf }) {
 
           {/* GENERATE */}
           <button
-            onClick={startQueueProcessing}
+            onClick={() => startQueueProcessing(false)}
             disabled={
               isProcessingAll ||
               pendingCount === 0
