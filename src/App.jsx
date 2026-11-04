@@ -1,17 +1,44 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { takeHandoff } from './utils/handoff';
 import PdfEditor from './PdfEditor';
 import AiColoringEditor from './AiColoringEditor';
 import StickerCalendarEditor from './StickerCalendarEditor';
-import { CalendarDays, Layers, Sparkles } from 'lucide-react';
+import AiChatStudio from './AiChatStudio';
+import { CalendarDays, Layers, MessageCircle, Sparkles } from 'lucide-react';
 
 export default function App() {
   const [appMode, setAppMode] = useState(null);
   const [pdfInitialImages, setPdfInitialImages] = useState([]);
+  const [sheetInitialPages, setSheetInitialPages] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    takeHandoff().then((payload) => {
+      if (cancelled || !payload?.items?.length) return;
+      if (payload.mode === 'sheets') {
+        setSheetInitialPages(payload.items);
+        setAppMode('sticker-calendar');
+      } else {
+        setPdfInitialImages(payload.items);
+        setAppMode('pdf');
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleSendToPdf = (images) => {
     setPdfInitialImages(images);
     setAppMode('pdf');
   };
+
+  const handleSendToSheets = (pages) => {
+    setSheetInitialPages(pages);
+    setAppMode('sticker-calendar');
+  };
+
+  const handleSheetPagesLoaded = useCallback(() => {
+    setSheetInitialPages([]);
+  }, []);
 
   const handleInitialImagesLoaded = useCallback(() => {
     setPdfInitialImages([]);
@@ -35,14 +62,40 @@ export default function App() {
     );
   }
   if (appMode === 'sticker-calendar') {
-    return <StickerCalendarEditor onBack={() => setAppMode(null)} />;
+    return (
+      <StickerCalendarEditor
+        onBack={() => setAppMode(null)}
+        initialPages={sheetInitialPages}
+        onInitialPagesLoaded={handleSheetPagesLoaded}
+      />
+    );
+  }
+  if (appMode === 'ai-personalization') {
+    return (
+      <AiChatStudio
+        onBack={() => setAppMode(null)}
+        onSendToPdf={handleSendToPdf}
+        onSendToSheets={handleSendToSheets}
+      />
+    );
   }
 
   return (
     <div className="h-screen w-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 p-6">
-      <h1 className="text-3xl font-bold text-slate-800 mb-8">Оберіть редактор</h1>
+      <h1 className="text-3xl font-bold text-slate-800 mb-8">Оберіть робочий простір</h1>
       
       <div className="flex gap-6 flex-wrap justify-center">
+
+        <button
+          onClick={() => setAppMode('ai-personalization')}
+          className="flex w-64 cursor-pointer flex-col items-center gap-4 rounded-2xl border border-fuchsia-200 bg-white/80 p-8 shadow-sm backdrop-blur-xl transition-all hover:-translate-y-1 hover:shadow-lg"
+        >
+          <div className="rounded-full bg-gradient-to-br from-fuchsia-100 to-violet-100 p-4 text-fuchsia-600">
+            <MessageCircle size={40} />
+          </div>
+          <h2 className="text-xl font-semibold text-slate-700">AI-дизайнер (чат)</h2>
+          <p className="text-center text-sm text-slate-500">Чат з AI: кидайте приклади, просіть ідеї й готові зображення для обкладинок, календариків і наклейок.</p>
+        </button>
         
         <button 
           onClick={() => setAppMode('ai-coloring')}

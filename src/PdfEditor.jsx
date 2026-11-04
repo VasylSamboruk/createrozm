@@ -40,13 +40,14 @@ export default function PdfEditor({ onBack, initialImages, onInitialImagesLoaded
     if (!initialImages?.length) return;
     let cancelled = false;
 
-    Promise.all(initialImages.map(async ({ name, src }) => {
+    Promise.all(initialImages.map(async ({ name, src, isBackCover }) => {
       const preparedImage = await prepareA4Image(src);
       return {
         id: crypto.randomUUID(),
         type: 'image',
         name,
-        ...preparedImage
+        ...preparedImage,
+        ...(isBackCover ? { ...await addQrToBackCover(preparedImage.src), isBackCover: true } : {})
       };
     }))
       .then((newPages) => {

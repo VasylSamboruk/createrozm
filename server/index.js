@@ -1,10 +1,12 @@
 import express from "express";
+import process from "node:process";
 import cors from "cors";
 import multer from "multer";
 import dotenv from "dotenv";
 import sharp from "sharp";
 import path from "path";
 import { fileURLToPath } from "url";
+import { registerAiChat } from "./aichat.js";
 
 // ============================================================
 // ВИПРАВЛЕННЯ ШЛЯХУ ДО .ENV
@@ -22,7 +24,7 @@ const PORT = process.env.PORT || 3001;
 // НАЛАШТУВАННЯ
 // ============================================================
 
-const OPENAI_IMAGE_MODEL = "gpt-image-2";
+const OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2";
 
 // A4-подібний вертикальний формат.
 const OUTPUT_SIZE = "1024x1536";
@@ -61,11 +63,144 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+async function getUsdUahRate() {
+  const configuredRate = Number(process.env.USD_TO_UAH);
+  if (process.env.USD_TO_UAH?.trim()) {
+    if (!Number.isFinite(configuredRate) || configuredRate <= 0) {
+      throw new Error("USD_TO_UAH має бути додатним числом.");
+    }
+    return configuredRate;
+  }
+
+  const response = await fetch("https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?valcode=USD&json");
+  if (!response.ok) throw new Error(`Не вдалося отримати курс НБУ (${response.status}).`);
+  const rates = await response.json();
+  const rate = rates?.[0]?.rate;
+  if (!Number.isFinite(rate) || rate <= 0) throw new Error("НБУ повернув некоректний курс USD/UAH.");
+  return rate;
+}
+
+app.get("/api/coloring/usage", async (req, res) => {
+  const adminKey = process.env.OPENAI_ADMIN_KEY;
+  if (!adminKey) {
+    return res.json({
+      available: false,
+      reason: "Додайте OPENAI_ADMIN_KEY у .env, щоб бачити фактичні витрати OpenAI.",
+      tokenUsageAvailable: false,
+    });
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const todayStart = Math.floor(Date.now() / 86400000) * 86400;
+  const usageUrl = new URL("https://api.openai.com/v1/organization/usage/images");
+  usageUrl.searchParams.set("start_time", String(todayStart));
+  usageUrl.searchParams.set("end_time", String(now));
+  usageUrl.searchParams.set("bucket_width", "1d");
+  usageUrl.searchParams.append("group_by[]", "model");
+  usageUrl.searchParams.append("models[]", OPENAI_IMAGE_MODEL);
+  usageUrl.searchParams.set("limit", "1");
+
+  const costsUrl = new URL("https://api.openai.com/v1/organization/costs");
+  costsUrl.searchParams.set("start_time", String(todayStart));
+  costsUrl.searchParams.set("end_time", String(now));
+  costsUrl.searchParams.set("bucket_width", "1d");
+  costsUrl.searchParams.append("group_by[]", "line_item");
+
+  const projectId = process.env.OPENAI_PROJECT_ID?.trim();
+  if (projectId) {
+    usageUrl.searchParams.append("project_ids[]", projectId);
+    costsUrl.searchParams.append("project_ids[]", projectId);
+  }
+
+  try {
+    const headers = { Authorization: `Bearer ${adminKey}` };
+    const [usageResponse, costsResponse, usdToUah] = await Promise.all([
+      fetch(usageUrl, { headers }),
+      fetch(costsUrl, { headers }),
+      getUsdUahRate(),
+    ]);
+
+    const [usageData, costsData] = await Promise.all([
+      usageResponse.json(),
+      costsResponse.json(),
+    ]);
+
+    if (!usageResponse.ok || !costsResponse.ok) {
+      const error = usageData?.error?.message || costsData?.error?.message;
+      return res.json({
+        available: false,
+        reason: error || "OpenAI не дозволив прочитати usage/costs. Перевірте права Admin API key.",
+        tokenUsageAvailable: false,
+      });
+    }
+
+    const imageResults = (usageData.data || []).flatMap((bucket) => bucket.results || []);
+    const images = imageResults.reduce((total, result) => total + (Number(result.images) || 0), 0);
+    const costResults = (costsData.data || []).flatMap((bucket) => bucket.results || []);
+    const imageCosts = costResults.filter((result) => {
+      const lineItem = String(result.line_item || "").toLowerCase();
+      return lineItem.includes("image") || lineItem.includes(OPENAI_IMAGE_MODEL.toLowerCase());
+    });
+    const spendUsd = imageCosts.length ? imageCosts.reduce((total, result) => {
+      const amount = Number(result.amount?.value);
+      return total + (Number.isFinite(amount) ? amount : 0);
+    }, 0) : null;
+
+    return res.json({
+      available: true,
+      model: OPENAI_IMAGE_MODEL,
+      period: "today",
+      images,
+      spendUsd,
+      spendUah: Number.isFinite(spendUsd) ? spendUsd * usdToUah : null,
+      averagePerImageUsd: images > 0 && Number.isFinite(spendUsd) ? spendUsd / images : null,
+      averagePerImageUah: images > 0 && Number.isFinite(spendUsd) ? (spendUsd / images) * usdToUah : null,
+      usdToUah,
+      currencyRateSource: process.env.USD_TO_UAH?.trim() ? "env" : "NBU",
+      tokenUsageAvailable: false,
+      tokenUsageNote: "OpenAI Images Usage API does not report token counts for image requests.",
+      projectScoped: Boolean(projectId),
+    });
+  } catch (error) {
+    console.error("Не вдалося отримати OpenAI usage/costs:", error);
+    return res.json({
+      available: false,
+      reason: error.message || "Не вдалося отримати звіт OpenAI.",
+      tokenUsageAvailable: false,
+    });
+  }
+});
+
 // ============================================================
 // PROMPT
 // ============================================================
 
-function buildColoringPrompt({ lineWidth = "medium", style = "children" } = {}) {
+function buildColoringPrompt({ lineWidth = "medium", style = "children", faceBoost = false } = {}) {
+  const faceBlock = faceBoost
+    ? `
+
+==============================
+FACE LIKENESS - TOP PRIORITY
+==============================
+
+This is a re-generation because the previous result did not look enough like the real person.
+Faces MUST be an accurate line-art copy of the faces in the photograph:
+
+- trace the real face shape, jawline and chin exactly
+- keep the exact eye shape, eye size, eye spacing and eyelids
+- keep the exact eyebrow shape and position
+- keep the exact nose shape and mouth shape, lip fullness and smile
+- keep the real cheeks, ears, forehead and hairline
+- keep the real facial expression and the real age
+- hair must follow the real hairstyle, parting and length strand direction
+
+Do NOT make cartoon faces. Do NOT enlarge the eyes. Do NOT make the face rounder, younger or "cuter".
+Do NOT beautify or idealise. Draw the face as a faithful, realistic but clean line drawing.
+For faces use slightly more detailed thin lines than for the rest of the scene.
+Every person must be clearly recognisable as the same real person from the photograph.
+`
+    : "";
+
   return `
 EDIT THE PROVIDED PHOTOGRAPH INTO A PROFESSIONAL A4 CHILDREN'S COLORING BOOK PAGE.
 
@@ -281,7 +416,7 @@ No text unless text is clearly present in the original photograph and is an impo
 The final result must be suitable for printing as an A4 children's coloring page.
 
 Create a beautiful, polished, professional coloring-book illustration based on the supplied photograph.
-`;
+${faceBlock}`;
 }
 
 // ============================================================
@@ -329,16 +464,23 @@ app.post("/api/coloring", upload.single("image"), async (req, res) => {
     // ЗМЕНШЕННЯ ЗОБРАЖЕННЯ ЧЕРЕЗ SHARP (Збереження пропорцій)
     // --------------------------------------------------------
 
-    console.log("✂️ Зменшуємо фото через Sharp (800px) для економії токенів...");
+    // Режим «краща схожість» вмикається лише для окремого фото: більша вхідна картинка й medium.
+    const faceBoost = req.body?.faceBoost === "1";
+    const inputSide = faceBoost ? 1536 : 800;
 
-    const resizedBuffer = await sharp(req.file.buffer)
+    console.log(`✂️ Зменшуємо фото через Sharp (${inputSide}px)${faceBoost ? " · КРАЩА СХОЖІСТЬ" : " для економії токенів"}...`);
+
+    let pipeline = sharp(req.file.buffer);
+    if (faceBoost) pipeline = pipeline.rotate();
+
+    const resizedBuffer = await pipeline
       .resize({
-        width: 800,
-        height: 800,
+        width: inputSide,
+        height: inputSide,
         fit: "inside", // Зберігає пропорції без обрізання та спотворень
-        withoutEnlargement: true, // Не збільшує, якщо фото менше 800px
+        withoutEnlargement: true, // Не збільшує, якщо фото менше за ліміт
       })
-      .jpeg({ quality: 85 }) // Конвертуємо у легкий JPEG для економії
+      .jpeg({ quality: faceBoost ? 92 : 85 }) // Конвертуємо у легкий JPEG для економії
       .toBuffer();
 
     console.log(`📉 Новий розмір: ${(resizedBuffer.length / 1024 / 1024).toFixed(2)} MB`);
@@ -352,10 +494,32 @@ app.post("/api/coloring", upload.single("image"), async (req, res) => {
     const lineWidth = req.body?.lineWidth || "medium";
     const style = req.body?.style || "children";
 
-    const prompt = buildColoringPrompt({
+    const basePrompt = buildColoringPrompt({
       lineWidth,
       style,
+      faceBoost,
     });
+    const customPrompt = typeof req.body?.prompt === "string"
+      ? req.body.prompt.trim().slice(0, 2000)
+      : "";
+    let optionPrompts = [];
+    if (typeof req.body?.options === "string" && req.body.options.length > 0) {
+      try {
+        const parsedOptions = JSON.parse(req.body.options);
+        if (!Array.isArray(parsedOptions) || parsedOptions.some((option) => typeof option !== "string")) {
+          return res.status(400).json({ error: "Некоректний список додаткових опцій." });
+        }
+        optionPrompts = parsedOptions.slice(0, 10).map((option) => option.slice(0, 500));
+      } catch {
+        return res.status(400).json({ error: "Не вдалося прочитати додаткові опції." });
+      }
+    }
+    const prompt = customPrompt
+      ? `${basePrompt}\n\nADDITIONAL USER INSTRUCTIONS:\n${customPrompt}`
+      : basePrompt;
+    const completePrompt = optionPrompts.length
+      ? `${prompt}\n\nADDITIONAL COLORING OPTIONS:\n- ${optionPrompts.join("\n- ")}`
+      : prompt;
 
     console.log("🖍️ Надсилаємо фотографію на OpenAI (Якість: LOW)...");
 
@@ -375,13 +539,13 @@ app.post("/api/coloring", upload.single("image"), async (req, res) => {
       req.file.originalname.replace(/\.[^/.]+$/, ".jpg")
     );
 
-    formData.append("prompt", prompt);
+    formData.append("prompt", completePrompt);
 
     // A4 portrait
     formData.append("size", OUTPUT_SIZE);
 
     // 🔥 ГОЛОВНА ЕКОНОМІЯ: Змінено з "high" на "low"
-    formData.append("quality", "low");
+    formData.append("quality", faceBoost ? "medium" : "low");
 
     formData.append("output_format", "png");
 
@@ -476,6 +640,14 @@ app.post("/api/coloring", upload.single("image"), async (req, res) => {
       model: OPENAI_IMAGE_MODEL,
       size: OUTPUT_SIZE,
       format: "png",
+      quality: faceBoost ? "medium" : "low",
+      tokenUsage: openaiData.usage
+        ? {
+            inputTokens: openaiData.usage.input_tokens ?? null,
+            outputTokens: openaiData.usage.output_tokens ?? null,
+            totalTokens: openaiData.usage.total_tokens ?? null,
+          }
+        : null,
       elapsedSeconds: Number(elapsed),
     });
   } catch (error) {
@@ -492,6 +664,9 @@ app.post("/api/coloring", upload.single("image"), async (req, res) => {
     });
   }
 });
+
+// Старий конвеєр (server/legacy/personalize.js) вимкнено; щоб повернути — імпортуйте registerPersonalize.
+registerAiChat(app, upload);
 
 app.use("/api", (req, res) => {
   res.status(404).json({

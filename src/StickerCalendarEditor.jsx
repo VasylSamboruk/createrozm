@@ -21,7 +21,7 @@ const makePage = async (file, kind) => {
   }
 };
 
-export default function StickerCalendarEditor({ onBack }) {
+export default function StickerCalendarEditor({ onBack, initialPages, onInitialPagesLoaded }) {
   const [mode, setMode] = useState('calendar');
   const [pages, setPages] = useState([]);
   const [editingSheet, setEditingSheet] = useState(null);
@@ -49,6 +49,26 @@ export default function StickerCalendarEditor({ onBack }) {
   useEffect(() => () => pagesRef.current.forEach((page) => {
     if (page.src.startsWith('blob:')) URL.revokeObjectURL(page.src);
   }), []);
+
+  useEffect(() => {
+    if (!initialPages?.length) return undefined;
+    let cancelled = false;
+    Promise.all(initialPages.map(async ({ kind, name, src }) => {
+      const image = await loadImage(src);
+      return { id: crypto.randomUUID(), name, kind, src, sourceSrc: src, width: image.width, height: image.height };
+    }))
+      .then((added) => {
+        if (cancelled) return;
+        setPages((current) => [...current, ...added]);
+        onInitialPagesLoaded?.();
+      })
+      .catch((error) => {
+        if (!cancelled) alert(error?.message || 'Не вдалося додати макети з AI-студії.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialPages, onInitialPagesLoaded]);
 
   const upload = async (event) => {
     const files = Array.from(event.target.files || []);
