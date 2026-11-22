@@ -4,12 +4,14 @@ import PdfEditor from './PdfEditor';
 import AiColoringEditor from './AiColoringEditor';
 import StickerCalendarEditor from './StickerCalendarEditor';
 import AiChatStudio from './AiChatStudio';
-import { CalendarDays, Layers, MessageCircle, Sparkles } from 'lucide-react';
+import BusinessChat from './BusinessChat';
+import { CalendarDays, Layers, MessageCircle, MessagesSquare, Sparkles } from 'lucide-react';
 
 export default function App() {
   const [appMode, setAppMode] = useState(null);
   const [pdfInitialImages, setPdfInitialImages] = useState([]);
   const [sheetInitialPages, setSheetInitialPages] = useState([]);
+  const [coloringInitialFiles, setColoringInitialFiles] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +46,10 @@ export default function App() {
     setPdfInitialImages([]);
   }, []);
 
+  const handleColoringFilesLoaded = useCallback(() => {
+    setColoringInitialFiles([]);
+  }, []);
+
   if (appMode === 'pdf') {
     return (
       <PdfEditor
@@ -58,6 +64,19 @@ export default function App() {
       <AiColoringEditor
         onBack={() => setAppMode(null)}
         onSendToPdf={handleSendToPdf}
+        initialFiles={coloringInitialFiles}
+        onInitialFilesLoaded={handleColoringFilesLoaded}
+      />
+    );
+  }
+  if (appMode === 'business-chat') {
+    return (
+      <BusinessChat
+        onBack={() => setAppMode(null)}
+        onSendToColoring={(files) => {
+          setColoringInitialFiles(files);
+          setAppMode('ai-coloring');
+        }}
       />
     );
   }
@@ -85,6 +104,17 @@ export default function App() {
       <h1 className="text-3xl font-bold text-slate-800 mb-8">Оберіть робочий простір</h1>
       
       <div className="flex gap-6 flex-wrap justify-center">
+
+        <button
+          onClick={() => setAppMode('business-chat')}
+          className="flex w-64 cursor-pointer flex-col items-center gap-4 rounded-2xl border border-sky-200 bg-white/80 p-8 shadow-sm backdrop-blur-xl transition-all hover:-translate-y-1 hover:shadow-lg"
+        >
+          <div className="rounded-full bg-gradient-to-br from-sky-100 to-indigo-100 p-4 text-sky-700">
+            <MessagesSquare size={40} />
+          </div>
+          <h2 className="text-xl font-semibold text-slate-700">Бізнес-чат</h2>
+          <p className="text-center text-sm text-slate-500">Перегляд чатів Facebook та Instagram і передавання фото в AI-розмальовки.</p>
+        </button>
 
         <button
           onClick={() => setAppMode('ai-personalization')}

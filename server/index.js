@@ -7,6 +7,7 @@ import sharp from "sharp";
 import path from "path";
 import { fileURLToPath } from "url";
 import { registerAiChat } from "./aichat.js";
+import { registerMetaRoutes } from "./meta.js";
 
 // ============================================================
 // ВИПРАВЛЕННЯ ШЛЯХУ ДО .ENV
@@ -667,6 +668,7 @@ app.post("/api/coloring", upload.single("image"), async (req, res) => {
 
 // Старий конвеєр (server/legacy/personalize.js) вимкнено; щоб повернути — імпортуйте registerPersonalize.
 registerAiChat(app, upload);
+registerMetaRoutes(app);
 
 app.use("/api", (req, res) => {
   res.status(404).json({

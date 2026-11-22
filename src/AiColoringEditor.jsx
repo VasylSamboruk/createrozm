@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import {
@@ -64,13 +64,14 @@ const formatUah = (value) => (
     : '—'
 );
 
-export default function AiColoringEditor({ onBack, onSendToPdf }) {
+export default function AiColoringEditor({ onBack, onSendToPdf, initialFiles = [], onInitialFilesLoaded }) {
   const [items, setItems] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [isProcessingAll, setIsProcessingAll] = useState(false);
   const [usageInfo, setUsageInfo] = useState(null);
   const [usageError, setUsageError] = useState('');
   const [isLoadingUsage, setIsLoadingUsage] = useState(false);
+  const consumedInitialFilesRef = useRef(null);
 
   const [batchSettings] = useState({
     style: 'children',
@@ -176,6 +177,30 @@ export default function AiColoringEditor({ onBack, onSendToPdf }) {
 
     e.target.value = '';
   };
+
+  useEffect(() => {
+    if (!initialFiles.length || consumedInitialFilesRef.current === initialFiles) return;
+    consumedInitialFilesRef.current = initialFiles;
+
+    const newItems = initialFiles.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      originalUrl: URL.createObjectURL(file),
+      name: file.name,
+      status: 'pending',
+      progressText: 'В черзі',
+      versions: [],
+      activeVersionIndex: 0,
+      settings: {
+        ...batchSettings,
+        prompt: ''
+      }
+    }));
+
+    setItems((prev) => [...prev, ...newItems]);
+    setActiveId((current) => current || newItems[0].id);
+    onInitialFilesLoaded?.();
+  }, [initialFiles, onInitialFilesLoaded, batchSettings]);
 
   // ============================================================
   // ВИДАЛЕННЯ
