@@ -1,5 +1,5 @@
 /* global chrome */
-export const MAX_PHOTOS = 20;
+export const MAX_PHOTOS = 25;
 export const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
 const APP_URL = 'https://createrozm-production.up.railway.app/';
 const allowedTypes = new Map([

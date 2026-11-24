@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Фото з чатів до AI-розмальовок",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Вибір завантажених фото з відкритого чату Meta і передавання до AI-розмальовок.",
   "permissions": ["activeTab", "scripting", "tabs"],
   "host_permissions": [
@@ -14,6 +14,12 @@
     "default_title": "Фото до AI-розмальовок",
     "default_popup": "popup.html"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://business.facebook.com/*"],
+      "js": ["chat-overlay.js"]
+    }
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"

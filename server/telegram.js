@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { Buffer } from "node:buffer";
 import process from "node:process";
 
-const MAX_PHOTOS = 20;
+const MAX_PHOTOS = 25;
 const MAX_BYTES = 20 * 1024 * 1024;
 const LINK_TTL = 30 * 60 * 1000;
 const BUTTON_START = "Надіслати фото в AI розмальовки";
@@ -55,7 +55,7 @@ export function createTelegramBot({ token, allowedUsers, appOrigin, fetchImpl = 
     const chatId = message.chat.id;
     const text = message.text?.trim();
     if (text === "/start" || text === BUTTON_START) {
-      await send(chatId, "Надішліть або перешліть фото, потім натисніть «Передати в AI розмальовки». До 20 фото сумарно до 20 МБ.");
+      await send(chatId, `Надішліть або перешліть фото, потім натисніть «Передати в AI розмальовки». До ${MAX_PHOTOS} фото сумарно до 20 МБ.`);
       return;
     }
     if (text === BUTTON_CLEAR) {
@@ -96,7 +96,7 @@ export function createTelegramBot({ token, allowedUsers, appOrigin, fetchImpl = 
     if (!item.fileId || !Number.isSafeInteger(item.size) || item.size <= 0) {
       await send(chatId, "Telegram не повідомив розмір фото. Спробуйте надіслати його ще раз.");
     } else if (photos.length >= MAX_PHOTOS || photos.reduce((sum, photoItem) => sum + photoItem.size, 0) + item.size > MAX_BYTES) {
-      await send(chatId, "Ліміт: 20 фото і 20 МБ разом. Передайте вже додані фото або очистіть список.");
+      await send(chatId, `Ліміт: ${MAX_PHOTOS} фото і 20 МБ разом. Передайте вже додані фото або очистіть список.`);
     } else {
       photos.push(item);
       pending.set(id, photos);

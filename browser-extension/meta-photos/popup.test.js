@@ -92,16 +92,18 @@ test('service worker prepares selected photos and transfers them to the editor',
   const code = (await readFile(new URL('./transfer.js', import.meta.url), 'utf8')).replaceAll('export ', '');
   let transferred;
   let activated = false;
-  const image = new Response('image-bytes', { headers: { 'content-type': 'image/jpeg' } });
   const context = vm.createContext({
     URL, Map, Blob, Uint8Array, String, AbortSignal, btoa,
     setTimeout, clearTimeout,
-    fetch: async () => ({
-      ok: true,
-      url: 'https://scontent.fbcdn.net/photo.jpg',
-      headers: image.headers,
-      body: image.body
-    }),
+    fetch: async () => {
+      const image = new Response('image-bytes', { headers: { 'content-type': 'image/jpeg' } });
+      return {
+        ok: true,
+        url: 'https://scontent.fbcdn.net/photo.jpg',
+        headers: image.headers,
+        body: image.body
+      };
+    },
     chrome: {
       tabs: {
         create: async () => ({ id: 1 }),
@@ -123,5 +125,7 @@ test('service worker prepares selected photos and transfers them to the editor',
   assert.equal(transferred[0].name, 'Client - фото 1.jpg');
   assert.equal(transferred[0].dataUrl, 'data:image/jpeg;base64,aW1hZ2UtYnl0ZXM=');
   assert.equal(activated, true);
-  await assert.rejects(context.send(Array(21).fill('https://scontent.fbcdn.net/photo.jpg')), /20/);
+  assert.equal(await context.send(Array(25).fill('https://scontent.fbcdn.net/photo.jpg')), 25);
+  assert.equal(transferred.length, 25);
+  await assert.rejects(context.send(Array(26).fill('https://scontent.fbcdn.net/photo.jpg')), /25/);
 });

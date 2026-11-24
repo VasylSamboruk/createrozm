@@ -46,10 +46,15 @@ test("private authorized users get isolated batches and a single-use import", as
 
 test("enforces count and size limits and permits retry after download failure", async () => {
   const { bot, sent, update, fail } = fixture();
-  for (let i = 0; i < 21; i++) {
+  for (let i = 0; i < 25; i++) {
     await bot.handleUpdate(update(1, { photo: [{ file_id: String(i), file_size: 1 }] }));
   }
+  assert.match(sent.at(-1).text, /25\/25/);
+  await bot.handleUpdate(update(1, { photo: [{ file_id: "extra", file_size: 1 }] }));
   assert.match(sent.at(-1).text, /Ліміт/);
+  await bot.handleUpdate(update(1, { text: "Передати в AI розмальовки" }));
+  const fullKey = sent.at(-1).text.match(/#telegram=([A-Za-z0-9_-]+)/)[1];
+  assert.equal((await bot.redeem(fullKey)).items.length, 25);
   await bot.handleUpdate(update(1, { text: "Очистити фото" }));
   await bot.handleUpdate(update(1, { photo: [{ file_id: "too-big", file_size: 20 * 1024 * 1024 + 1 }] }));
   assert.match(sent.at(-1).text, /Ліміт/);

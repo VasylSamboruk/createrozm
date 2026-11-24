@@ -12,6 +12,7 @@
   let sending = false;
   let scanning = false;
   let scanCancelled = false;
+  let userHidden = false;
   const host = document.createElement('div');
   host.id = 'coloring-chat-overlay';
   const shadow = host.attachShadow({ mode: 'closed' });
@@ -118,7 +119,8 @@
   document.documentElement.append(host);
 
   function getRoot() {
-    if (location.hostname === 'business.facebook.com' && location.pathname.startsWith('/latest/inbox/')) {
+    if (location.hostname === 'business.facebook.com') {
+      if (!location.pathname.startsWith('/latest/inbox/')) return null;
       if (!new URL(location.href).searchParams.get('selected_item_id')) return null;
       const regions = Array.from(document.querySelectorAll('[role="region"][aria-label]'))
         .filter((region) => /message|conversation|повідомлен|переписк/i.test(region.getAttribute('aria-label')));
@@ -223,6 +225,7 @@
       chatKey = location.href;
     }
     chatRoot = root;
+    if (location.hostname === 'business.facebook.com') host.hidden = userHidden || !root;
     const photos = getPhotos(root, true);
     const current = new Set(photos);
     for (const [image, button] of markers) {
@@ -415,6 +418,7 @@
     }
   });
   hide.addEventListener('click', () => {
+    userHidden = true;
     host.hidden = true;
   });
   const observer = new MutationObserver(scheduleRefresh);
@@ -426,6 +430,7 @@
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (sender.id !== chrome.runtime.id || message?.source !== 'coloring-photo-popup') return;
+    userHidden = false;
     host.hidden = false;
     refresh();
     if (message.action === 'remove') selected.delete(message.url);

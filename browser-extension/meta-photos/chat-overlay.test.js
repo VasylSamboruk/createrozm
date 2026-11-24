@@ -6,6 +6,7 @@ import vm from 'node:vm';
 test('marks message photos, excludes avatars, preserves selection while scrolling, and clears on navigation', async () => {
   const elements = [];
   let onMessage;
+  let onMutation;
   const bounds = { width: 140, height: 140, top: 100, bottom: 240, left: 100, right: 240 };
   const image = (url, options = {}) => ({
     complete: true,
@@ -63,7 +64,10 @@ test('marks message photos, excludes avatars, preserves selection while scrollin
     getComputedStyle: (item) => ({ borderRadius: item.radius, overflowY: item.overflowY || 'visible' }),
     requestAnimationFrame: (callback) => callback(),
     setTimeout: (callback) => queueMicrotask(callback),
-    MutationObserver: class { observe() {} },
+    MutationObserver: class {
+      constructor(callback) { onMutation = callback; }
+      observe() {}
+    },
     window: { addEventListener() {} },
     chrome: { runtime: { id: 'test', onMessage: { addListener: (callback) => { onMessage = callback; } } } }
   });
@@ -102,12 +106,29 @@ test('marks message photos, excludes avatars, preserves selection while scrollin
   });
   document.querySelectorAll = () => [businessRegion];
   location.href = 'https://business.facebook.com/latest/inbox/all/?selected_item_id=1';
+  onMutation();
+  const host = elements.find((item) => item.id === 'coloring-chat-overlay');
+  assert.equal(host.hidden, false);
+  assert.equal(elements.filter((item) => item.className === 'marker').length, 2);
+  elements.find((item) => item.textContent === 'Сховати').click();
+  onMutation();
+  assert.equal(host.hidden, true);
   let businessState;
   onMessage({ source: 'coloring-photo-popup', action: 'select-visible' }, { id: 'test' }, (result) => { businessState = result; });
+  assert.equal(host.hidden, false);
   assert.equal(businessState.foundChat, true);
   assert.deepEqual(Array.from(businessState.photos), [businessPhoto.currentSrc]);
   elements.find((item) => item.textContent === 'Фото').click();
   await elements.find((item) => item.textContent === 'Сканувати історію').click();
   assert.equal(scrollTop, 100);
   assert.ok(elements.some((item) => item.textContent?.includes('Знайдено 1 фото')));
+  location.href = 'https://business.facebook.com/latest/home/';
+  onMutation();
+  assert.equal(host.hidden, true);
+});
+
+test('Business Suite enables the overlay automatically, including navigation into the inbox', async () => {
+  const manifest = JSON.parse(await readFile(new URL('./manifest.json', import.meta.url), 'utf8'));
+  const script = manifest.content_scripts.find((entry) => entry.js.includes('chat-overlay.js'));
+  assert.ok(script.matches.includes('https://business.facebook.com/*'));
 });
