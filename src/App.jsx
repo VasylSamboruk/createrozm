@@ -7,11 +7,50 @@ import AiChatStudio from './AiChatStudio';
 import BusinessChat from './BusinessChat';
 import { CalendarDays, Layers, MessageCircle, MessagesSquare, Sparkles } from 'lucide-react';
 
+const telegramKey = new URLSearchParams(window.location.hash.slice(1)).get('telegram');
+if (telegramKey) window.history.replaceState(null, '', window.location.pathname + window.location.search);
+let telegramImport;
+
+function importTelegramPhotos() {
+  if (!telegramImport) {
+    const apiBase = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || '';
+    telegramImport = fetch(`${apiBase}/api/telegram/photos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: telegramKey })
+    }).then(async (response) => {
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Не вдалося отримати фото з Telegram.');
+      return result.items.map((item) => {
+        const binary = atob(item.data);
+        const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+        return new File([bytes], item.name, { type: item.type });
+      });
+    });
+  }
+  return telegramImport;
+}
+
 export default function App() {
   const [appMode, setAppMode] = useState(null);
   const [pdfInitialImages, setPdfInitialImages] = useState([]);
   const [sheetInitialPages, setSheetInitialPages] = useState([]);
   const [coloringInitialFiles, setColoringInitialFiles] = useState([]);
+  const [telegramStatus, setTelegramStatus] = useState(telegramKey ? 'loading' : '');
+
+  useEffect(() => {
+    if (!telegramKey) return;
+    let cancelled = false;
+    importTelegramPhotos().then((files) => {
+      if (cancelled) return;
+      setColoringInitialFiles(files);
+      setAppMode('ai-coloring');
+      setTelegramStatus('');
+    }).catch((error) => {
+      if (!cancelled) setTelegramStatus(error.message || 'Не вдалося отримати фото з Telegram.');
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,6 +89,18 @@ export default function App() {
     setColoringInitialFiles([]);
   }, []);
 
+  if (telegramStatus) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-100 p-6 text-center text-slate-700">
+        <p>{telegramStatus === 'loading' ? 'Завантажуємо фото з Telegram…' : telegramStatus}</p>
+        {telegramStatus !== 'loading' && (
+          <button className="rounded-xl bg-sky-600 px-4 py-2 text-white" onClick={() => setTelegramStatus('')}>
+            На головну
+          </button>
+        )}
+      </div>
+    );
+  }
   if (appMode === 'pdf') {
     return (
       <PdfEditor

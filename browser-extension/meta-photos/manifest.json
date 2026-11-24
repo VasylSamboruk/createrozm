@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Фото з чатів до AI-розмальовок",
+  "version": "1.2.0",
+  "description": "Вибір завантажених фото з відкритого чату Meta і передавання до AI-розмальовок.",
+  "permissions": ["activeTab", "scripting", "tabs"],
+  "host_permissions": [
+    "https://*.fbcdn.net/*",
+    "https://*.cdninstagram.com/*",
+    "https://*.fbsbx.com/*",
+    "https://createrozm-production.up.railway.app/*"
+  ],
+  "action": {
+    "default_title": "Фото до AI-розмальовок",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
+}
